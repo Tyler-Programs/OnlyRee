@@ -55,7 +55,6 @@ public class XpDropDamageCalculator
 {
     private static final String NPC_JSON_FILE = "npcs.min.json";
     private static final HashMap<Integer, Double> XP_BONUS_MAPPING = new HashMap<>();
-//    private static final HashMap<Integer, Double> UNKNOWN_XP_BONUS_MAPPING = new HashMap<>();
     private static final Pattern RAID_LEVEL_MATCHER = Pattern.compile("(\\d+)");
     private static final int RAID_LEVEL_WIDGET_ID = (481 << 16) | 42;
     private static final int ROOM_LEVEL_WIDGET_ID = (481 << 16) | 45;
