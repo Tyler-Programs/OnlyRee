@@ -1,6 +1,5 @@
 package com.cyneris;
 
-import com.cyneris.predictedhit.AttackStyle;
 import com.cyneris.predictedhit.Hit;
 import com.cyneris.predictedhit.XpDropDamageCalculator;
 import com.cyneris.predictedhit.npcswithscalingbonus.ChambersLayoutSolver;
@@ -9,22 +8,23 @@ import com.google.inject.Provides;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
-import net.runelite.api.coords.WorldArea;
-import net.runelite.api.coords.WorldPoint;
-import net.runelite.api.events.*;
+import net.runelite.api.events.FakeXpDrop;
+import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.StatChanged;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.game.ItemVariationMapping;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import net.runelite.client.plugins.specialcounter.SpecialCounterUpdate;
-import net.runelite.client.plugins.specialcounter.SpecialWeapon;
 
 import javax.inject.Inject;
 import java.util.ArrayDeque;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @PluginDescriptor(
@@ -40,8 +40,6 @@ public class OnlyReePlugin extends Plugin {
 
     @Getter
     private final ArrayDeque<Hit> hitBuffer = new ArrayDeque<>();
-    @Getter
-    private AttackStyle attackStyle;
     @Inject
     private XpDropDamageCalculator xpDropDamageCalculator;
     @Inject
@@ -57,18 +55,16 @@ public class OnlyReePlugin extends Plugin {
     private Client client;
     @Inject
     private OnlyReeConfig config;
-//	@Inject
-//	private Player player;
 
-//	@Inject
-//	private ItemManager itemManager;
+    private final Set<Integer> npcsToIgnore = new HashSet<>();
 
 
     @Override
     protected void startUp() throws Exception {
-        log.info("Example started!");
-
         if (client.getGameState() == GameState.LOGGED_IN) {
+            // -------------- Testing ignore fields -----------------------
+            addAllIgnoredNpcIds();
+            // ------------------------------------------------------------
             clientThread.invokeLater(() ->
             {
                 int[] xps = client.getSkillExperiences();
@@ -76,6 +72,7 @@ public class OnlyReePlugin extends Plugin {
             });
         } else {
             Arrays.fill(previous_exp, 0);
+            npcsToIgnore.clear();
         }
     }
 
@@ -87,6 +84,14 @@ public class OnlyReePlugin extends Plugin {
     @Provides
     OnlyReeConfig provideConfig(ConfigManager configManager) {
         return configManager.getConfig(OnlyReeConfig.class);
+    }
+
+    @Subscribe
+    protected void onConfigChanged(ConfigChanged configChanged) {
+        if (configChanged.getGroup().equals("onlyree")) {
+            npcsToIgnore.clear();
+            addAllIgnoredNpcIds();
+        }
     }
 
     @Subscribe
@@ -112,7 +117,7 @@ public class OnlyReePlugin extends Plugin {
             lastOpponentId = ((NPC) lastOpponent).getId();
 
             // User is actively ignoring this NPC
-            if (config.ignoreNpcIds().contains(lastOpponentId)) {
+            if (npcsToIgnore.contains(lastOpponentId)) {
                 return;
             }
 
@@ -155,7 +160,7 @@ public class OnlyReePlugin extends Plugin {
                 lastOpponentId = ((NPC) lastOpponent).getId();
 
                 // User is actively ignoring this NPC
-                if (config.ignoreNpcIds().contains(lastOpponentId)) {
+                if (npcsToIgnore.contains(lastOpponentId)) {
                     return;
                 }
 
@@ -178,111 +183,31 @@ public class OnlyReePlugin extends Plugin {
         }
         if (gameStateChanged.getGameState() == GameState.LOGGED_IN && resetXpTrackerLingerTimerFlag) {
             resetXpTrackerLingerTimerFlag = false;
-//			xpDropOverlayManager.setLastSkillSetMillis(System.currentTimeMillis());
         }
 
         chambersLayoutSolver.onGameStateChanged(gameStateChanged);
     }
 
+
     // ------------------------------------------------------------------------------------------------
-
-//	@Subscribe
-//	public void onGameStateChanged(GameStateChanged gameStateChanged)
-//	{
-//		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
-//		{
-//			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Example says " + config.greeting(), null);
-//			client.playSoundEffect(2911); // REEEEEE
-//		}
-//	}
-
-    @Subscribe
-    public void onVarbitChanged(VarbitChanged varbitChanged) {
-        // Account for delayed hits in a mutli-hit special attack
-//		if (varbitChanged.getVarpId() != VarPlayer.SPECIAL_ATTACK_PERCENT) {
-//			return;
-//		}
-//
-//		var specWeapon = usedSpecialWeapon();
-//		if (specWeapon == null) {
-//			log.debug("Unrecognized spec weapon.");
-//			return;
-//		}
-//
-//		Actor interactedActor = client.getLocalPlayer().getInteracting();
-//		var target = interactedActor instanceof NPC ? (NPC) interactedActor : null;
-//
-//		var hitsplatTick = serverTicks + getHitDelay(specWeapon, target);
-//
-//		var playerWeaponId = player.getPlayerComposition().getEquipmentId(KitType.WEAPON);
-//		client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Example says weapon is " + playerWeaponId, null);
-//		var itemComp = itemManager.getItemComposition(playerWeaponId);
-//		ItemClient itemClient; // can get item stats
-//		ItemEvent itemEvent;
+    private boolean isNumeric(String input) {
+        log.info(input);
+        return input.isEmpty() || input.isBlank() || !input.matches("$[0-9]*^");
     }
 
-    @Subscribe
-    public void onInteractingChanged(InteractingChanged event) {
-        // Maintain a map of npc -> weapon held (if spec wep)
-        var target = event.getTarget();
-        NPC npc;
-        ItemComposition itemComposition;
-    }
-
-    @Subscribe
-    public void onHitsplatApplied(HitsplatApplied hitsplatApplied) {
-        var hitsplat = hitsplatApplied.getHitsplat();
-        var actor = hitsplatApplied.getActor();
-        if (hitsplat.getAmount() > 0 && hitsplat.isMine() && actor instanceof NPC) {
-            NPC npc = (NPC) actor;
-            hitsplat.getDisappearsOnGameCycle();
-        }
-        SpecialCounterUpdate tmp;
-        //tmp.getWeapon().getHitDelay();
-    }
-
-    private SpecialWeapon usedSpecialWeapon() {
-        ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
-        if (equipment == null) {
-            return null;
+    private void addAllIgnoredNpcIds() {
+        if (config.ignoreNpcIds().length() == 0) {
+            return;
         }
 
-        Item weapon = equipment.getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
-        if (weapon == null) {
-            return null;
-        }
-
-        for (SpecialWeapon specialWeapon : SpecialWeapon.values()) {
-            if (Arrays.stream(specialWeapon.getItemID()).anyMatch(id -> id == weapon.getId())) {
-                return specialWeapon;
-            }
-        }
-        return null;
-    }
-
-    private int getHitDelay(SpecialWeapon specialWeapon, Actor target) {
-        if (target == null)
-            return 1;
-
-        Player player = client.getLocalPlayer();
-        if (player == null)
-            return 1;
-
-        WorldPoint playerWp = player.getWorldLocation();
-        if (playerWp == null)
-            return 1;
-
-        WorldArea targetArea = target.getWorldArea();
-        if (targetArea == null)
-            return 1;
-
-        final int distance = targetArea.distanceTo(playerWp);
-        final int serverCycles = specialWeapon.getHitDelay(distance);
-
-        if (serverCycles != 1) {
-            log.debug("Projectile distance {} server cycles {}", distance, serverCycles);
-        }
-
-        return serverCycles;
+        var idsAsStrings = config.ignoreNpcIds().split(",");
+        var allIgnoredIds = Arrays.stream(idsAsStrings)
+                .map(String::trim)
+                .filter(this::isNumeric)
+                .peek(str -> log.info("numeric found: " + str))
+                .map(Integer::parseInt)
+                .collect(Collectors.toSet());
+        log.info("Adding All ignored npc ids: " + allIgnoredIds + "\n");
+        npcsToIgnore.addAll(allIgnoredIds);
     }
 }
