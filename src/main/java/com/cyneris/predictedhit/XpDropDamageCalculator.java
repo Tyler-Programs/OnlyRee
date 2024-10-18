@@ -186,9 +186,9 @@ public class XpDropDamageCalculator {
     private HashMap<Integer, Double> getNpcsWithXpBonus() {
         HashMap<Integer, Double> map1 = new HashMap<>();
         try {
-            try (InputStream resource = XpDropDamageCalculator.class.getResourceAsStream(NPC_JSON_FILE)) {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(resource,
-                        StandardCharsets.UTF_8));
+            try (InputStream resource = XpDropDamageCalculator.class.getResourceAsStream(NPC_JSON_FILE);
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(resource,
+                         StandardCharsets.UTF_8))) {
                 Object jsonResult = GSON.fromJson(reader, Map.class);
                 try {
                     Map<String, LinkedTreeMap<String, Double>> map = (Map<String, LinkedTreeMap<String, Double>>) jsonResult;
