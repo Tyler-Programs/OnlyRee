@@ -1,6 +1,7 @@
 package com.cyneris;
 
 import com.cyneris.predictedhit.Hit;
+import com.cyneris.predictedhit.SpellUtil;
 import com.cyneris.predictedhit.XpDropDamageCalculator;
 import com.cyneris.predictedhit.npcswithscalingbonus.ChambersLayoutSolver;
 import com.google.common.collect.ImmutableSet;
@@ -8,9 +9,8 @@ import com.google.inject.Provides;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
-import net.runelite.api.events.FakeXpDrop;
-import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.*;
+import net.runelite.api.kit.KitType;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -18,6 +18,7 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.game.ItemVariationMapping;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.util.Text;
 
 import javax.inject.Inject;
 import java.util.ArrayDeque;
@@ -35,8 +36,48 @@ public class OnlyReePlugin extends Plugin {
     private static final Set<Integer> VOIDWAKERS = new ImmutableSet.Builder<Integer>()
             .addAll(ItemVariationMapping.getVariations(ItemID.VOIDWAKER))
             .build();
+    private static final Set<Integer> CROSSBOWS = new ImmutableSet.Builder<Integer>() // All crossbows that can shoot addy bolts or higher
+            .add(ItemID.ADAMANT_CROSSBOW)
+            .addAll(ItemVariationMapping.getVariations(ItemID.RUNE_CROSSBOW))
+            .addAll(ItemVariationMapping.getVariations(ItemID.DRAGON_CROSSBOW))
+            .addAll(ItemVariationMapping.getVariations(ItemID.DRAGON_HUNTER_CROSSBOW))
+            .addAll(ItemVariationMapping.getVariations(ItemID.ARMADYL_CROSSBOW))
+            .addAll(ItemVariationMapping.getVariations(ItemID.ZARYTE_CROSSBOW))
+            .build();
+
+    private static final Set<Integer> AOE_RANGE_WEAPONS = new ImmutableSet.Builder<Integer>() // All range weapons that can hit multiple targets
+            .addAll(ItemVariationMapping.getVariations(ItemID.VENATOR_BOW))
+            .add(ItemID.CHINCHOMPA)
+            .add(ItemID.RED_CHINCHOMPA)
+            .add(ItemID.BLACK_CHINCHOMPA)
+            .build();
+
+    private static final Set<Integer> AUTOCASTING_WEAPONS = new ImmutableSet.Builder<Integer>() // Weapons that can autocast ancients
+            .addAll(ItemVariationMapping.getVariations(ItemID.ANCIENT_STAFF))
+            .addAll(ItemVariationMapping.getVariations(ItemID.ANCIENT_SCEPTRE))
+            .addAll(ItemVariationMapping.getVariations(ItemID.BLOOD_ANCIENT_SCEPTRE))
+            .addAll(ItemVariationMapping.getVariations(ItemID.ICE_ANCIENT_SCEPTRE))
+            .addAll(ItemVariationMapping.getVariations(ItemID.SHADOW_ANCIENT_SCEPTRE))
+            .addAll(ItemVariationMapping.getVariations(ItemID.SMOKE_ANCIENT_SCEPTRE))
+            .addAll(ItemVariationMapping.getVariations(ItemID.AHRIMS_STAFF))
+            .addAll(ItemVariationMapping.getVariations(ItemID.MASTER_WAND))
+            .addAll(ItemVariationMapping.getVariations(ItemID.KODAI_WAND))
+            .addAll(ItemVariationMapping.getVariations(ItemID.NIGHTMARE_STAFF))
+            .addAll(ItemVariationMapping.getVariations(ItemID.ELDRITCH_NIGHTMARE_STAFF))
+            .addAll(ItemVariationMapping.getVariations(ItemID.VOLATILE_NIGHTMARE_STAFF))
+            .addAll(ItemVariationMapping.getVariations(ItemID.THAMMARONS_SCEPTRE))
+            .addAll(ItemVariationMapping.getVariations(ItemID.ACCURSED_SCEPTRE))
+            .addAll(ItemVariationMapping.getVariations(ItemID.BLUE_MOON_SPEAR))
+            .build();
+
+    private static final Set<Integer> QUIVERS = new ImmutableSet.Builder<Integer>()
+            .addAll(ItemVariationMapping.getVariations(ItemID.DIZANAS_MAX_CAPE))
+            .addAll(ItemVariationMapping.getVariations(ItemID.DIZANAS_QUIVER))
+            .addAll(ItemVariationMapping.getVariations(ItemID.BLESSED_DIZANAS_QUIVER))
+            .build();
     private static final int LEVIATHAN_ID = 12214;
     private static final int VARDORVIS_ID = 12223;
+    private static final int AUTO_CAST_VARBIT_ID = 276;
 
     @Getter
     private final ArrayDeque<Hit> hitBuffer = new ArrayDeque<>();
@@ -48,6 +89,8 @@ public class OnlyReePlugin extends Plugin {
     private ChambersLayoutSolver chambersLayoutSolver;
     private static final int[] previous_exp = new int[Skill.values().length - 1];
     private boolean resetXpTrackerLingerTimerFlag = false;
+    private boolean isAoeManualCasting = false; // Flag for manually barraging/bursting
+    private int autocastingSpellId = 0;
 
     // ---------------------------------------------------------------------------
 
@@ -106,6 +149,11 @@ public class OnlyReePlugin extends Plugin {
         int lastOpponentId = -1;
         Actor lastOpponent = null;
         if (player != null) {
+            var weaponId = player.getPlayerComposition().getEquipmentId(KitType.WEAPON);
+
+            // Check if we should ignore this damage due to config settings
+            if (skipSoundEffect(player, weaponId)) return;
+
             lastOpponent = player.getInteracting();
         }
 
@@ -133,6 +181,22 @@ public class OnlyReePlugin extends Plugin {
                 client.playSoundEffect(2911); // REEEEEE
             }
         }
+        isAoeManualCasting = false;
+    }
+
+    @Subscribe
+    protected void onMenuOptionClicked(MenuOptionClicked event) {
+        String menuOption = Text.removeTags(event.getMenuOption());
+        String menuTarget = Text.removeTags(event.getMenuTarget());
+        isAoeManualCasting = menuOption.contains("Cast")
+                && (menuTarget.contains("Burst ->") || menuTarget.contains("Barrage ->"));
+    }
+
+    @Subscribe
+    protected void onVarbitChanged(VarbitChanged event) {
+        if (event.getVarbitId() == AUTO_CAST_VARBIT_ID) {
+            autocastingSpellId = client.getVarbitValue(AUTO_CAST_VARBIT_ID);
+        }
     }
 
     @Subscribe
@@ -149,6 +213,11 @@ public class OnlyReePlugin extends Plugin {
             int lastOpponentId = -1;
             Actor lastOpponent = null;
             if (player != null) {
+                var weaponId = player.getPlayerComposition().getEquipmentId(KitType.WEAPON);
+
+                // Check if we should ignore this damage due to config settings
+                if (skipSoundEffect(player, weaponId)) return;
+
                 lastOpponent = player.getInteracting();
             }
 
@@ -173,6 +242,7 @@ public class OnlyReePlugin extends Plugin {
         }
 
         previous_exp[event.getSkill().ordinal()] = event.getXp();
+        isAoeManualCasting = false;
     }
 
     @Subscribe
@@ -209,5 +279,34 @@ public class OnlyReePlugin extends Plugin {
                 .collect(Collectors.toSet());
         log.info("Adding All ignored npc ids: " + allIgnoredIds + "\n");
         npcsToIgnore.addAll(allIgnoredIds);
+    }
+
+    private boolean skipSoundEffect(Player player, int weaponId) {
+        // Natural ruby proc
+        if (CROSSBOWS.contains(weaponId)) {
+            var dizanaAmmoId = client.getVarpValue(VarPlayer.DIZANAS_QUIVER_ITEM_ID); // Ammo in the dizana's quiver
+            var ammoItem = client.getItemContainer(InventoryID.EQUIPMENT).getItem(EquipmentInventorySlot.AMMO.getSlotIdx());
+            if (ammoItem.getId() == ItemID.RUBY_BOLTS_E || ammoItem.getId() == ItemID.RUBY_DRAGON_BOLTS_E) {
+                return true;
+            } else {
+                return QUIVERS.contains(player.getPlayerComposition().getEquipmentId(KitType.CAPE))
+                        && (dizanaAmmoId == ItemID.RUBY_BOLTS_E || dizanaAmmoId == ItemID.RUBY_DRAGON_BOLTS_E);
+            }
+
+        }
+
+        // AOE is disabled
+        if (!config.triggerOnAoe()) {
+            // Range weapons
+            if (AOE_RANGE_WEAPONS.contains(weaponId)) return true;
+
+            // Manual AoE spell
+            if (isAoeManualCasting) return true;
+
+            // Autocast AoE spell
+            if (AUTOCASTING_WEAPONS.contains(weaponId) && SpellUtil.isAoE(autocastingSpellId))
+                return true;
+        }
+        return false;
     }
 }

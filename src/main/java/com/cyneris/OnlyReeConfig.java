@@ -25,4 +25,14 @@ public interface OnlyReeConfig extends Config {
     default String ignoreNpcIds() {
         return "";
     }
+
+    @ConfigItem(
+            keyName = "triggerOnAoe",
+            name = "Enable For AOE",
+            description = "Whether the sound effect should play when using AOE spells and range weapons.",
+            position = 3
+    )
+    default boolean triggerOnAoe() {
+        return false;
+    }
 }
