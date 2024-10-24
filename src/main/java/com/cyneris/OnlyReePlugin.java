@@ -1,6 +1,5 @@
 package com.cyneris;
 
-import com.cyneris.predictedhit.Hit;
 import com.cyneris.predictedhit.SpellUtil;
 import com.cyneris.predictedhit.XpDropDamageCalculator;
 import com.cyneris.predictedhit.npcswithscalingbonus.ChambersLayoutSolver;
@@ -80,7 +79,7 @@ public class OnlyReePlugin extends Plugin {
     private static final int AUTO_CAST_VARBIT_ID = 276;
 
     @Getter
-    private final ArrayDeque<Hit> hitBuffer = new ArrayDeque<>();
+    private final ArrayDeque<Integer> hitBuffer = new ArrayDeque<>();
     @Inject
     private XpDropDamageCalculator xpDropDamageCalculator;
     @Inject
@@ -159,7 +158,6 @@ public class OnlyReePlugin extends Plugin {
 
         int hit = 0;
         if (lastOpponent instanceof Player) {
-            lastOpponentId = lastOpponent.getCombatLevel();
             hit = xpDropDamageCalculator.calculateHitOnPlayer(lastOpponent.getCombatLevel(), currentXp, config.xpMultiplier());
         } else if (lastOpponent instanceof NPC) {
             lastOpponentId = ((NPC) lastOpponent).getId();
@@ -174,14 +172,25 @@ public class OnlyReePlugin extends Plugin {
                     && lastOpponent.getCombatLevel() > 1000) {
                 lastOpponentId *= -1;
             }
-
             hit = xpDropDamageCalculator.calculateHitOnNpc(lastOpponentId, currentXp, config.xpMultiplier());
-
-            if (hit >= 100) {
-                client.playSoundEffect(2911); // REEEEEE
-            }
         }
+
+        hitBuffer.add(hit);
         isAoeManualCasting = false;
+    }
+
+    @Subscribe
+    protected void onPostClientTick(PostClientTick event) {
+        int totalHit = 0;
+        while (!hitBuffer.isEmpty()) {
+            var hit = hitBuffer.poll();
+            log.info("Polling {} from hitbuffer", hit);
+            totalHit += hit;
+        }
+
+        if (totalHit >= 100) {
+            client.playSoundEffect(2911); // REEEEEE
+        }
     }
 
     @Subscribe
@@ -207,6 +216,8 @@ public class OnlyReePlugin extends Plugin {
 
         int currentXp = event.getXp();
         int previousXp = previous_exp[event.getSkill().ordinal()];
+
+        previous_exp[event.getSkill().ordinal()] = event.getXp();
         if (previousXp > 0 && currentXp - previousXp > 0) {
 
             Player player = client.getLocalPlayer();
@@ -236,12 +247,9 @@ public class OnlyReePlugin extends Plugin {
                 hit = xpDropDamageCalculator.calculateHitOnNpc(lastOpponentId, currentXp - previousXp, config.xpMultiplier());
             }
 
-            if (hit >= 100) {
-                client.playSoundEffect(2911); // REEEEEE
-            }
+            hitBuffer.add(hit);
         }
 
-        previous_exp[event.getSkill().ordinal()] = event.getXp();
         isAoeManualCasting = false;
     }
 
